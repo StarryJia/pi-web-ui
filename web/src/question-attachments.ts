@@ -15,11 +15,13 @@
  * 既不 import ./types（单测在 NodeNext 下会因扩展名缺失 shim 报 TS2835），
  * 也让任意 UiMessage 都能传入。
  */
-/** PromptAttachment 的结构化镜像（与 server/protocol.ts 一致）。 */
+import { readTextQuote } from "../../server/text-quote.js";
+
 /** PromptAttachment 的结构化镜像（与 server/protocol.ts 一致）。 */
 export interface EditPromptAttachment {
 	path: string;
-	mode?: "inline" | "reference" | "lines" | "page" | "conversation";
+	mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote";
+	quote?: import("../../server/protocol.js").TextQuote;
 	conversationId?: string;
 	sessionPath?: string;
 	lines?: { start: number; end: number };
@@ -78,6 +80,11 @@ export function collectQuestionAttachments(
 		// the user content itself).
 		const atts: EditPromptAttachment[] = [];
 		pushImageAttachments(atts, msg.content);
+		const quotes = (msg.details as { quotes?: unknown[] } | undefined)?.quotes;
+		for (const value of Array.isArray(quotes) ? quotes : []) {
+			const quote = readTextQuote(value);
+			if (quote) atts.push({ path: "", mode: "quote", quote });
+		}
 		// Then the attachment-card run that follows this question (stops at
 		// any other message kind — assistant/toolResult/next user/etc.).
 		for (
@@ -86,6 +93,7 @@ export function collectQuestionAttachments(
 			j++
 		) {
 			const details = (messages[j].details ?? {}) as {
+				quote?: import("../../server/protocol.js").TextQuote;
 				mode?: string;
 				name?: string;
 				size?: number;
@@ -94,6 +102,11 @@ export function collectQuestionAttachments(
 				endLine?: number;
 				upload?: boolean;
 			};
+			if (details.mode === "quote") {
+				const quote = readTextQuote(details.quote);
+				if (quote) atts.push({ path: "", mode: "quote", quote });
+				continue;
+			}
 			// 1) Image card (pasted/uploaded images incl. bridged thumbnails) —
 			//    the raw base64 lives in the image blocks.
 			if (pushImageAttachments(atts, messages[j].content, details.name)) continue;
